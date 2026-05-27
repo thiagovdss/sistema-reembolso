@@ -21,3 +21,5 @@ Antes de publicar, confirme no Firebase:
 - Authentication > Anonymous ativado.
 - Firestore Database criado.
 - Rules publicadas permitindo leitura e escrita.
+
+Atualização do projeto
