@@ -260,7 +260,16 @@ export default function ReimbursementSystem() {
   function updateData(updater) {
     setData(prev => {
       const nextData = typeof updater === 'function' ? updater(prev) : updater;
-      persistData(nextData);
+
+      // Salva apenas no navegador imediatamente.
+      // A nuvem só será atualizada quando clicar no botão "Salvar na nuvem".
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextData));
+        setCloudStatus('Alterações locais não sincronizadas');
+      } catch (e) {
+        console.warn('Erro ao salvar localmente', e);
+      }
+
       return nextData;
     });
   }
@@ -472,6 +481,9 @@ export default function ReimbursementSystem() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <button onClick={() => persistData(data)} className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-100">
+                <Save size={18} /> Salvar na nuvem
+              </button>
               <button onClick={exportData} className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold hover:bg-slate-50">Exportar backup</button>
               {active === 'clients' && <button onClick={() => setModal({ type: 'client' })} className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-100"><Plus size={18} /> Novo cliente</button>}
               {active === 'reimbursements' && <button onClick={() => setModal({ type: 'reimbursement' })} className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-100"><Plus size={18} /> Novo reembolso</button>}
