@@ -228,35 +228,35 @@ export default function ReimbursementSystem() {
     }
   }, []);
 
-  useEffect(() => {
-    if (loadingFromCloudRef.current) return;
-
+  async function persistData(nextData) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextData));
     } catch (e) {
       console.warn('Erro ao salvar localStorage', e);
     }
 
-    if (!isCloudConfigured()) return;
-    if (!cloudReadyRef.current || !dbRef.current || !hasLoadedCloudRef.current) return;
+    if (!isCloudConfigured() || !dbRef.current || !cloudReadyRef.current) {
+      setCloudStatus('Salvo localmente');
+      return;
+    }
 
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-
-    saveTimerRef.current = setTimeout(() => {
+    try {
       setCloudStatus('Salvando na nuvem...');
-      setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true }).then(() => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        setCloudStatus('Conectado à nuvem · salvo');
-      }).catch(error => {
-        console.warn('Erro ao salvar na nuvem', error);
-        setCloudStatus('Falha ao salvar na nuvem, salvo localmente');
-      });
-    }, 500);
+      await setDoc(dbRef.current, { payload: nextData, updatedAt: new Date().toISOString() }, { merge: true });
+      setCloudStatus('Conectado à nuvem · salvo');
+    } catch (error) {
+      console.warn('Erro ao salvar na nuvem', error);
+      setCloudStatus('Falha ao salvar na nuvem, salvo localmente');
+    }
+  }
 
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, [data]);
+  function updateData(updater) {
+    setData(prev => {
+      const nextData = typeof updater === 'function' ? updater(prev) : updater;
+      persistData(nextData);
+      return nextData;
+    });
+  }
 
   function notify(msg) {
     setToast(msg);
@@ -320,7 +320,7 @@ export default function ReimbursementSystem() {
     };
     if (!client.name) return notify('Informe o nome do cliente.');
     if (!client.cpf && !client.cnpj) return notify('Informe CPF ou CNPJ.');
-    setData(prev => ({
+    updateData(prev => ({
       ...prev,
       clients: editingId ? prev.clients.map(c => c.id === editingId ? client : c) : [...prev.clients, client],
     }));
@@ -342,7 +342,7 @@ export default function ReimbursementSystem() {
       createdAt: form.createdAt || today(),
     };
     if (!item.clientId || !item.title) return notify('Informe cliente e título.');
-    setData(prev => ({
+    updateData(prev => ({
       ...prev,
       reimbursements: editingId ? prev.reimbursements.map(r => r.id === editingId ? item : r) : [...prev.reimbursements, item],
     }));
@@ -363,7 +363,7 @@ export default function ReimbursementSystem() {
       createdAt: form.createdAt || today(),
     };
     if (!task.title || !task.assignee) return notify('Informe título e responsável.');
-    setData(prev => {
+    updateData(prev => {
       const updatedTeam = prev.team.includes(task.assignee) ? prev.team : [...prev.team, task.assignee];
       return {
         ...prev,
@@ -376,7 +376,7 @@ export default function ReimbursementSystem() {
   }
 
   function deleteClient(id) {
-    setData(prev => ({
+    updateData(prev => ({
       ...prev,
       clients: prev.clients.filter(c => c.id !== id),
       reimbursements: prev.reimbursements.filter(r => r.clientId !== id),
@@ -386,18 +386,18 @@ export default function ReimbursementSystem() {
   }
 
   function deleteReimbursement(id) {
-    setData(prev => ({ ...prev, reimbursements: prev.reimbursements.filter(r => r.id !== id) }));
+    updateData(prev => ({ ...prev, reimbursements: prev.reimbursements.filter(r => r.id !== id) }));
     notify('Reembolso removido.');
   }
 
   function deleteActivity(id) {
-    setData(prev => ({ ...prev, activities: prev.activities.filter(a => a.id !== id) }));
+    updateData(prev => ({ ...prev, activities: prev.activities.filter(a => a.id !== id) }));
     notify('Atividade removida.');
   }
 
   function addComment(reimbursementId, text) {
     if (!text.trim()) return;
-    setData(prev => ({
+    updateData(prev => ({
       ...prev,
       reimbursements: prev.reimbursements.map(r => r.id === reimbursementId ? {
         ...r,
@@ -408,7 +408,7 @@ export default function ReimbursementSystem() {
 
   function addDocument(reimbursementId, fileName) {
     if (!fileName) return;
-    setData(prev => ({
+    updateData(prev => ({
       ...prev,
       reimbursements: prev.reimbursements.map(r => r.id === reimbursementId ? { ...r, documents: [...r.documents, fileName] } : r),
     }));
@@ -518,14 +518,14 @@ export default function ReimbursementSystem() {
           {active === 'dashboard' && <Dashboard data={data} clientMap={clientMap} setActive={setActive} />}
           {active === 'clients' && <ClientsTable clients={filteredClients} onEdit={c => setModal({ type: 'client', item: c })} onDelete={deleteClient} />}
           {active === 'reimbursements' && <ReimbursementsTable items={filteredReimbursements} clientMap={clientMap} onOpen={r => setModal({ type: 'reimbursementDetails', item: r })} onEdit={r => setModal({ type: 'reimbursement', item: r })} onDelete={deleteReimbursement} />}
-          {active === 'activities' && <ActivityWorkspace activities={filteredActivities} allActivities={data.activities} clientMap={clientMap} onEdit={a => setModal({ type: 'activity', item: a })} onDelete={deleteActivity} setData={setData} />}
+          {active === 'activities' && <ActivityWorkspace activities={filteredActivities} allActivities={data.activities} clientMap={clientMap} onEdit={a => setModal({ type: 'activity', item: a })} onDelete={deleteActivity} setData={updateData} />}
         </div>
       </main>
 
       {modal?.type === 'client' && <ClientModal item={modal.item} onClose={() => setModal(null)} onSave={saveClient} />}
       {modal?.type === 'reimbursement' && <ReimbursementModal item={modal.item} clients={data.clients} onClose={() => setModal(null)} onSave={saveReimbursement} />}
       {modal?.type === 'activity' && <ActivityModal item={modal.item} clients={data.clients} team={data.team} onClose={() => setModal(null)} onSave={saveActivity} />}
-      {modal?.type === 'reimbursementDetails' && <ReimbursementDetails item={data.reimbursements.find(r => r.id === modal.item.id)} client={clientMap[modal.item.clientId]} onClose={() => setModal(null)} setData={setData} addComment={addComment} addDocument={addDocument} />}
+      {modal?.type === 'reimbursementDetails' && <ReimbursementDetails item={data.reimbursements.find(r => r.id === modal.item.id)} client={clientMap[modal.item.clientId]} onClose={() => setModal(null)} updateData={updateData} addComment={addComment} addDocument={addDocument} />}
 
       <AnimatePresence>
         {toast && <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }} className="fixed bottom-5 right-5 z-[60] rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-2xl">{toast}</motion.div>}
@@ -679,11 +679,11 @@ function ActivityModal({ item, clients, team, onClose, onSave }) {
   return <Modal title={item ? 'Editar atividade' : 'Nova atividade'} onClose={onClose}><div className="grid gap-4 md:grid-cols-2"><Field label="Título *"><input className={inputClass} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></Field><Field label="Cliente"><select className={inputClass} value={form.clientId} onChange={e => setForm({ ...form, clientId: e.target.value })}><option value="">Sem cliente</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field><Field label="Responsável *"><input className={inputClass} list="responsaveis-atividades" value={form.assignee} onChange={e => setForm({ ...form, assignee: e.target.value })} placeholder="Digite ou selecione um responsável" /><datalist id="responsaveis-atividades">{team.map(t => <option key={t} value={t} />)}</datalist><span className="mt-1 block text-xs text-slate-500">Você pode escolher uma sugestão ou digitar qualquer outro nome.</span></Field><Field label="Status"><select className={inputClass} value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}><option>A Fazer</option><option>Em Andamento</option><option>Concluído</option></select></Field><Field label="Prioridade"><select className={inputClass} value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}><option>Baixa</option><option>Média</option><option>Alta</option></select></Field><Field label="Prazo"><input type="date" className={inputClass} value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} /></Field><Field label="Descrição"><textarea className={`${inputClass} min-h-24`} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></Field></div><div className="mt-6 flex justify-end gap-2"><button onClick={onClose} className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold">Cancelar</button><button onClick={() => onSave(form, item?.id)} className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white">Salvar atividade</button></div></Modal>;
 }
 
-function ReimbursementDetails({ item, client, onClose, setData, addComment, addDocument }) {
+function ReimbursementDetails({ item, client, onClose, updateData, addComment, addDocument }) {
   const [comment, setComment] = useState('');
   if (!item) return null;
   function changeStatus(status) {
-    setData(prev => ({ ...prev, reimbursements: prev.reimbursements.map(r => r.id === item.id ? { ...r, status } : r) }));
+    updateData(prev => ({ ...prev, reimbursements: prev.reimbursements.map(r => r.id === item.id ? { ...r, status } : r) }));
   }
   return <Modal title={`Detalhes ${item.id}`} onClose={onClose}><div className="grid gap-5 md:grid-cols-2"><div className="rounded-3xl bg-slate-50 p-5"><h3 className="mb-3 font-bold">Resumo</h3><div className="space-y-2 text-sm"><p><b>Cliente:</b> {client?.name || 'Sem cliente'}</p><p><b>Solicitação:</b> {item.title}</p><p><b>Valor:</b> {currency(item.amount)}</p><p><b>Data prevista:</b> {item.dueDate || '-'}</p><p><b>Status:</b> <Badge className={statusColors[item.status]}>{item.status}</Badge></p><p><b>Descrição:</b> {item.description || '-'}</p></div><div className="mt-4 grid grid-cols-2 gap-2"><button onClick={() => changeStatus('Aprovado')} className="rounded-2xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">Aprovar</button><button onClick={() => changeStatus('Rejeitado')} className="rounded-2xl bg-rose-600 px-3 py-2 text-sm font-semibold text-white">Rejeitar</button><button onClick={() => changeStatus('Pago')} className="rounded-2xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Marcar pago</button><button onClick={() => changeStatus('Pendente')} className="rounded-2xl bg-slate-700 px-3 py-2 text-sm font-semibold text-white">Pendente</button></div></div><div className="rounded-3xl bg-slate-50 p-5"><h3 className="mb-3 flex items-center gap-2 font-bold"><FileText size={18}/> Documentos</h3><div className="mb-3 space-y-2">{item.documents.length ? item.documents.map((d, i) => <div key={`${d}-${i}`} className="rounded-2xl bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">{d}</div>) : <p className="text-sm text-slate-500">Nenhum documento anexado.</p>}</div><label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold ring-1 ring-slate-200 hover:bg-slate-50"><Upload size={17}/> Adicionar documento<input type="file" className="hidden" onChange={e => addDocument(item.id, e.target.files?.[0]?.name)} /></label></div></div><div className="mt-5 rounded-3xl bg-slate-50 p-5"><h3 className="mb-3 flex items-center gap-2 font-bold"><MessageSquare size={18}/> Comentários</h3><div className="mb-4 max-h-56 space-y-3 overflow-auto">{item.comments.map(c => <div key={c.id} className="rounded-2xl bg-white p-3 ring-1 ring-slate-200"><div className="mb-1 text-xs font-semibold text-slate-500">{c.author} · {c.date}</div><div className="text-sm text-slate-700">{c.text}</div></div>)}</div><div className="flex gap-2"><input className={inputClass} value={comment} onChange={e => setComment(e.target.value)} placeholder="Adicionar comentário..." /><button onClick={() => { addComment(item.id, comment); setComment(''); }} className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white">Enviar</button></div></div></Modal>;
 }
