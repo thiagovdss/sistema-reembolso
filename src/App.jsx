@@ -249,13 +249,19 @@ export default function ReimbursementSystem() {
 
         onSnapshot(dbRef.current, snapshot => {
           const cloudData = snapshot.data();
-          if (cloudData?.payload) {
+
+          // Carrega os dados da nuvem apenas uma vez.
+          // Depois disso, evita que o Firebase sobrescreva alterações recém-feitas na tela.
+          if (cloudData?.payload && !hasLoadedCloudRef.current) {
             loadingFromCloudRef.current = true;
             hasLoadedCloudRef.current = true;
             setData(cloudData.payload);
             localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData.payload));
             setTimeout(() => { loadingFromCloudRef.current = false; }, 0);
-          } else {
+          }
+
+          // Se ainda não existir documento na nuvem, cria com os dados atuais.
+          if (!cloudData?.payload && !hasLoadedCloudRef.current) {
             hasLoadedCloudRef.current = true;
             setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true });
           }
@@ -289,6 +295,7 @@ export default function ReimbursementSystem() {
 
     if (isCloudConfigured() && cloudReadyRef.current && dbRef.current && hasLoadedCloudRef.current && !loadingFromCloudRef.current) {
       setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true }).then(() => {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         setCloudStatus('Conectado à nuvem · salvo');
       }).catch(error => {
         console.warn('Erro ao salvar na nuvem', error);
