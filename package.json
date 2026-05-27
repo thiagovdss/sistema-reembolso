@@ -1,20 +1,12 @@
-{
-  "scripts": {
-    "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
-  },
-  "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "firebase": "latest",
-    "framer-motion": "latest",
-    "lucide-react": "latest",
-    "tailwindcss": "latest",
-    "postcss": "latest",
-    "autoprefixer": "latest"
-  },
-  "devDependencies": {}
+"dependencies": {
+  "@vitejs/plugin-react": "latest",
+  "vite": "latest",
+  "react": "latest",
+  "react-dom": "latest",
+  "firebase": "latest",
+  "framer-motion": "latest",
+  "lucide-react": "latest",
+  "tailwindcss": "3.4.17",
+  "postcss": "8.4.49",
+  "autoprefixer": "10.4.20"
 }
