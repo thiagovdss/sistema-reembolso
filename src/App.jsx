@@ -3,10 +3,38 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { doc, getFirestore, onSnapshot, setDoc } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, Users, ClipboardList, Wallet, CheckCircle2, Clock3, AlertTriangle, Cloud, CloudOff, FileText, MessageSquare, Pencil, Trash2, X, Upload, Building2, User, LayoutDashboard, KanbanSquare } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  Users,
+  ClipboardList,
+  Wallet,
+  CheckCircle2,
+  Clock3,
+  AlertTriangle,
+  Cloud,
+  CloudOff,
+  FileText,
+  MessageSquare,
+  Pencil,
+  Trash2,
+  X,
+  Upload,
+  Building2,
+  User,
+  LayoutDashboard,
+  KanbanSquare,
+  Save,
+} from 'lucide-react';
 
 const STORAGE_KEY = 'painel_reembolso_clientes_tarefas_v1';
 
+// Para ativar a nuvem de verdade:
+// 1. Crie um projeto no Firebase.
+// 2. Ative Authentication > Anonymous.
+// 3. Ative Firestore Database.
+// 4. Copie as configurações do seu app web e cole abaixo.
+// 5. Troque cloudEnabled para true.
 const firebaseConfig = {
   cloudEnabled: true,
   apiKey: 'AIzaSyA1PObWO9auhTYcyenG0BdKFA3ErjRgu6M',
@@ -20,14 +48,81 @@ const firebaseConfig = {
 const CLOUD_DOC_ID = 'sistema-reembolso-principal';
 
 function isCloudConfigured() {
-  return Boolean(firebaseConfig.cloudEnabled && firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId && firebaseConfig.appId);
+  return Boolean(
+    firebaseConfig.cloudEnabled &&
+    firebaseConfig.apiKey &&
+    firebaseConfig.authDomain &&
+    firebaseConfig.projectId &&
+    firebaseConfig.appId
+  );
 }
 
 const initialData = {
-  clients: [],
+  clients: [
+    {
+      id: 'cli-1',
+      name: 'Ana Athayde Mafra',
+      type: 'PF',
+      cpf: '000.000.000-00',
+      cnpj: '',
+      email: 'ana@email.com',
+      phone: '(11) 99999-0000',
+      notes: 'Cliente com solicitação de estorno de parcelas.',
+      createdAt: '2026-05-27',
+    },
+    {
+      id: 'cli-2',
+      name: 'Banco C6 S.A',
+      type: 'PJ',
+      cpf: '',
+      cnpj: '00.000.000/0001-00',
+      email: 'reembolso@cliente.com',
+      phone: '',
+      notes: 'Cliente PJ para despesas processuais.',
+      createdAt: '2026-05-27',
+    },
+  ],
   team: ['Thiago', 'Isabela', 'Marina', 'Rafaela', 'Joana'],
-  reimbursements: [],
-  activities: [],
+  reimbursements: [
+    {
+      id: 'REB-001',
+      clientId: 'cli-1',
+      title: 'Reembolso de parcelas descontadas',
+      amount: 7480,
+      status: 'Pendente',
+      dueDate: '2026-06-16',
+      description: 'Abertura de tarefa no X-Gracco com valor devido por contrato.',
+      documents: ['formulario-reembolso.pdf', 'calculo-corrigido.xlsx'],
+      comments: [
+        { id: 'c1', author: 'Thiago', text: 'Solicitação revisada internamente.', date: '2026-05-27 09:30' },
+      ],
+      createdAt: '2026-05-27',
+    },
+  ],
+  activities: [
+    {
+      id: 'ATV-001',
+      title: 'Confirmar saldo remanescente com cliente',
+      clientId: 'cli-1',
+      assignee: 'Thiago',
+      status: 'A Fazer',
+      priority: 'Alta',
+      dueDate: '2026-05-30',
+      description: 'Aguardar orientação antes de abrir nova solicitação.',
+      createdAt: '2026-05-27',
+    },
+    {
+      id: 'ATV-002',
+      title: 'Anexar comprovantes e autorizações',
+      clientId: 'cli-2',
+      assignee: 'Isabela',
+      status: 'Em Andamento',
+      priority: 'Média',
+      dueDate: '2026-06-03',
+      description: 'Conferir nota de débito com comprovante e e-mail de autorização.',
+      createdAt: '2026-05-27',
+    },
+  ],
 };
 
 function uid(prefix) {
@@ -48,16 +143,29 @@ function currency(value) {
 }
 
 function maskCpf(value = '') {
-  return value.replace(/\D/g, '').slice(0, 11).replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  return value
+    .replace(/\D/g, '')
+    .slice(0, 11)
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
 }
 
 function maskCnpj(value = '') {
-  return value.replace(/\D/g, '').slice(0, 14).replace(/(\d{2})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1/$2').replace(/(\d{4})(\d{1,2})$/, '$1-$2');
+  return value
+    .replace(/\D/g, '')
+    .slice(0, 14)
+    .replace(/(\d{2})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1/$2')
+    .replace(/(\d{4})(\d{1,2})$/, '$1-$2');
 }
 
 function maskPhone(value = '') {
   const v = value.replace(/\D/g, '').slice(0, 11);
-  if (v.length <= 10) return v.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d)/, '$1-$2');
+  if (v.length <= 10) {
+    return v.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d)/, '$1-$2');
+  }
   return v.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d)/, '$1-$2');
 }
 
@@ -70,8 +178,6 @@ const statusColors = {
   'Em Andamento': 'bg-indigo-100 text-indigo-800 border-indigo-200',
   Concluído: 'bg-emerald-100 text-emerald-800 border-emerald-200',
 };
-
-const inputClass = 'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100';
 
 function Badge({ children, className = '' }) {
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${className}`}>{children}</span>;
@@ -94,8 +200,15 @@ function Modal({ title, children, onClose }) {
 }
 
 function Field({ label, children }) {
-  return <label className="block"><span className="mb-1 block text-sm font-semibold text-slate-700">{label}</span>{children}</label>;
+  return (
+    <label className="block">
+      <span className="mb-1 block text-sm font-semibold text-slate-700">{label}</span>
+      {children}
+    </label>
+  );
 }
+
+const inputClass = 'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100';
 
 export default function ReimbursementSystem() {
   const [data, setData] = useState(initialData);
@@ -108,6 +221,7 @@ export default function ReimbursementSystem() {
   const dbRef = useRef(null);
   const cloudReadyRef = useRef(false);
   const loadingFromCloudRef = useRef(false);
+  const hasLoadedCloudRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -120,13 +234,14 @@ export default function ReimbursementSystem() {
 
   useEffect(() => {
     if (!isCloudConfigured()) return;
+
     try {
       const app = initializeApp(firebaseConfig);
       const auth = getAuth(app);
       const db = getFirestore(app);
       dbRef.current = doc(db, 'workspaces', CLOUD_DOC_ID);
 
-      const unsubscribeAuth = onAuthStateChanged(auth, user => {
+      const unsubscribeAuth = onAuthStateChanged(auth, async user => {
         if (!user) return;
         setCloudStatus('Conectado à nuvem');
         cloudReadyRef.current = true;
@@ -135,10 +250,12 @@ export default function ReimbursementSystem() {
           const cloudData = snapshot.data();
           if (cloudData?.payload) {
             loadingFromCloudRef.current = true;
+            hasLoadedCloudRef.current = true;
             setData(cloudData.payload);
             localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData.payload));
             setTimeout(() => { loadingFromCloudRef.current = false; }, 0);
           } else {
+            hasLoadedCloudRef.current = true;
             setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true });
           }
         }, error => {
@@ -169,8 +286,10 @@ export default function ReimbursementSystem() {
       console.warn('Erro ao salvar localStorage', e);
     }
 
-    if (isCloudConfigured() && cloudReadyRef.current && dbRef.current && !loadingFromCloudRef.current) {
-      setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true }).catch(error => {
+    if (isCloudConfigured() && cloudReadyRef.current && dbRef.current && hasLoadedCloudRef.current && !loadingFromCloudRef.current) {
+      setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true }).then(() => {
+        setCloudStatus('Conectado à nuvem · salvo');
+      }).catch(error => {
         console.warn('Erro ao salvar na nuvem', error);
         setCloudStatus('Falha ao salvar na nuvem, salvo localmente');
       });
@@ -197,15 +316,14 @@ export default function ReimbursementSystem() {
 
   const stats = useMemo(() => {
     const total = data.reimbursements.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-    const overdueItems = data.reimbursements.filter(r => r.dueDate && r.dueDate < today() && r.status !== 'Pago');
     return {
       total,
       clients: data.clients.length,
       pending: data.reimbursements.filter(r => r.status === 'Pendente').length,
       approved: data.reimbursements.filter(r => r.status === 'Aprovado' || r.status === 'Pago').length,
       tasks: data.activities.filter(a => a.status !== 'Concluído').length,
-      overdue: overdueItems.length,
-      overdueAmount: overdueItems.reduce((sum, r) => sum + Number(r.amount || 0), 0),
+      overdue: data.reimbursements.filter(r => r.dueDate && r.dueDate < today() && r.status !== 'Pago').length,
+      overdueAmount: data.reimbursements.filter(r => r.dueDate && r.dueDate < today() && r.status !== 'Pago').reduce((sum, r) => sum + Number(r.amount || 0), 0),
     };
   }, [data]);
 
@@ -231,7 +349,10 @@ export default function ReimbursementSystem() {
     };
     if (!client.name) return notify('Informe o nome do cliente.');
     if (!client.cpf && !client.cnpj) return notify('Informe CPF ou CNPJ.');
-    setData(prev => ({ ...prev, clients: editingId ? prev.clients.map(c => c.id === editingId ? client : c) : [...prev.clients, client] }));
+    setData(prev => ({
+      ...prev,
+      clients: editingId ? prev.clients.map(c => c.id === editingId ? client : c) : [...prev.clients, client],
+    }));
     setModal(null);
     notify(editingId ? 'Cliente atualizado.' : 'Cliente cadastrado.');
   }
@@ -250,7 +371,10 @@ export default function ReimbursementSystem() {
       createdAt: form.createdAt || today(),
     };
     if (!item.clientId || !item.title) return notify('Informe cliente e título.');
-    setData(prev => ({ ...prev, reimbursements: editingId ? prev.reimbursements.map(r => r.id === editingId ? item : r) : [...prev.reimbursements, item] }));
+    setData(prev => ({
+      ...prev,
+      reimbursements: editingId ? prev.reimbursements.map(r => r.id === editingId ? item : r) : [...prev.reimbursements, item],
+    }));
     setModal(null);
     notify(editingId ? 'Reembolso atualizado.' : 'Reembolso cadastrado.');
   }
@@ -270,7 +394,11 @@ export default function ReimbursementSystem() {
     if (!task.title || !task.assignee) return notify('Informe título e responsável.');
     setData(prev => {
       const updatedTeam = prev.team.includes(task.assignee) ? prev.team : [...prev.team, task.assignee];
-      return { ...prev, team: updatedTeam, activities: editingId ? prev.activities.map(a => a.id === editingId ? task : a) : [...prev.activities, task] };
+      return {
+        ...prev,
+        team: updatedTeam,
+        activities: editingId ? prev.activities.map(a => a.id === editingId ? task : a) : [...prev.activities, task],
+      };
     });
     setModal(null);
     notify(editingId ? 'Atividade atualizada.' : 'Atividade criada.');
@@ -439,7 +567,6 @@ function Dashboard({ data, clientMap, setActive }) {
   const recent = [...data.reimbursements].slice(-5).reverse();
   const openTasks = data.activities.filter(a => a.status !== 'Concluído').slice(0, 5);
   const overdue = data.reimbursements.filter(r => r.dueDate && r.dueDate < today() && r.status !== 'Pago');
-
   return (
     <div className="grid gap-6 xl:grid-cols-2">
       <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
@@ -448,57 +575,25 @@ function Dashboard({ data, clientMap, setActive }) {
           <button onClick={() => setActive('reimbursements')} className="text-sm font-semibold text-rose-600">Ver cobranças</button>
         </div>
         <div className="space-y-3">
-          {overdue.length ? overdue.map(r => (
-            <div key={r.id} className="flex items-center justify-between rounded-2xl border border-rose-100 bg-rose-50 p-4">
-              <div>
-                <div className="font-semibold text-rose-900">{r.title}</div>
-                <div className="text-sm text-rose-700">{clientMap[r.clientId]?.name || 'Sem cliente'} · Venceu em {r.dueDate}</div>
-              </div>
-              <div className="text-right">
-                <div className="font-bold text-rose-900">{currency(r.amount)}</div>
-                <Badge className="border-rose-200 bg-white text-rose-700">Cobrar</Badge>
-              </div>
-            </div>
-          )) : <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Nenhum reembolso vencido no momento.</p>}
+          {overdue.length ? overdue.map(r => <div key={r.id} className="flex items-center justify-between rounded-2xl border border-rose-100 bg-rose-50 p-4"><div><div className="font-semibold text-rose-900">{r.title}</div><div className="text-sm text-rose-700">{clientMap[r.clientId]?.name || 'Sem cliente'} · Venceu em {r.dueDate}</div></div><div className="text-right"><div className="font-bold text-rose-900">{currency(r.amount)}</div><Badge className="border-rose-200 bg-white text-rose-700">Cobrar</Badge></div></div>) : <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Nenhum reembolso vencido no momento.</p>}
         </div>
       </section>
-
       <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="font-bold">Reembolsos recentes</h3>
           <button onClick={() => setActive('reimbursements')} className="text-sm font-semibold text-blue-600">Ver todos</button>
         </div>
         <div className="space-y-3">
-          {recent.map(r => (
-            <div key={r.id} className="flex items-center justify-between rounded-2xl border border-slate-100 p-4">
-              <div>
-                <div className="font-semibold">{r.title}</div>
-                <div className="text-sm text-slate-500">{clientMap[r.clientId]?.name || 'Sem cliente'} · {r.id}</div>
-              </div>
-              <div className="text-right">
-                <div className="font-bold">{currency(r.amount)}</div>
-                <Badge className={statusColors[r.status]}>{r.status}</Badge>
-              </div>
-            </div>
-          ))}
+          {recent.map(r => <div key={r.id} className="flex items-center justify-between rounded-2xl border border-slate-100 p-4"><div><div className="font-semibold">{r.title}</div><div className="text-sm text-slate-500">{clientMap[r.clientId]?.name || 'Sem cliente'} · {r.id}</div></div><div className="text-right"><div className="font-bold">{currency(r.amount)}</div><Badge className={statusColors[r.status]}>{r.status}</Badge></div></div>)}
         </div>
       </section>
-
       <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200 xl:col-span-2">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="font-bold">Atividades abertas</h3>
           <button onClick={() => setActive('activities')} className="text-sm font-semibold text-blue-600">Abrir quadro</button>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
-          {openTasks.map(a => (
-            <div key={a.id} className="rounded-2xl border border-slate-100 p-4">
-              <div className="mb-2 flex items-start justify-between gap-3">
-                <div className="font-semibold">{a.title}</div>
-                <Badge className={statusColors[a.status]}>{a.status}</Badge>
-              </div>
-              <div className="text-sm text-slate-500">{clientMap[a.clientId]?.name || 'Sem cliente'} · Responsável: {a.assignee}</div>
-            </div>
-          ))}
+          {openTasks.map(a => <div key={a.id} className="rounded-2xl border border-slate-100 p-4"><div className="mb-2 flex items-start justify-between gap-3"><div className="font-semibold">{a.title}</div><Badge className={statusColors[a.status]}>{a.status}</Badge></div><div className="text-sm text-slate-500">{clientMap[a.clientId]?.name || 'Sem cliente'} · Responsável: {a.assignee}</div></div>)}
         </div>
       </section>
     </div>
