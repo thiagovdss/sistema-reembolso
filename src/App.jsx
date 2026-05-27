@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { doc, getFirestore, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, getDoc, getFirestore, setDoc } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -58,71 +58,10 @@ function isCloudConfigured() {
 }
 
 const initialData = {
-  clients: [
-    {
-      id: 'cli-1',
-      name: 'Ana Athayde Mafra',
-      type: 'PF',
-      cpf: '000.000.000-00',
-      cnpj: '',
-      email: 'ana@email.com',
-      phone: '(11) 99999-0000',
-      notes: 'Cliente com solicitação de estorno de parcelas.',
-      createdAt: '2026-05-27',
-    },
-    {
-      id: 'cli-2',
-      name: 'Banco C6 S.A',
-      type: 'PJ',
-      cpf: '',
-      cnpj: '00.000.000/0001-00',
-      email: 'reembolso@cliente.com',
-      phone: '',
-      notes: 'Cliente PJ para despesas processuais.',
-      createdAt: '2026-05-27',
-    },
-  ],
+  clients: [],
   team: ['Thiago', 'Isabela', 'Marina', 'Rafaela', 'Joana'],
-  reimbursements: [
-    {
-      id: 'REB-001',
-      clientId: 'cli-1',
-      title: 'Reembolso de parcelas descontadas',
-      amount: 7480,
-      status: 'Pendente',
-      dueDate: '2026-06-16',
-      description: 'Abertura de tarefa no X-Gracco com valor devido por contrato.',
-      documents: ['formulario-reembolso.pdf', 'calculo-corrigido.xlsx'],
-      comments: [
-        { id: 'c1', author: 'Thiago', text: 'Solicitação revisada internamente.', date: '2026-05-27 09:30' },
-      ],
-      createdAt: '2026-05-27',
-    },
-  ],
-  activities: [
-    {
-      id: 'ATV-001',
-      title: 'Confirmar saldo remanescente com cliente',
-      clientId: 'cli-1',
-      assignee: 'Thiago',
-      status: 'A Fazer',
-      priority: 'Alta',
-      dueDate: '2026-05-30',
-      description: 'Aguardar orientação antes de abrir nova solicitação.',
-      createdAt: '2026-05-27',
-    },
-    {
-      id: 'ATV-002',
-      title: 'Anexar comprovantes e autorizações',
-      clientId: 'cli-2',
-      assignee: 'Isabela',
-      status: 'Em Andamento',
-      priority: 'Média',
-      dueDate: '2026-06-03',
-      description: 'Conferir nota de débito com comprovante e e-mail de autorização.',
-      createdAt: '2026-05-27',
-    },
-  ],
+  reimbursements: [],
+  activities: [],
 };
 
 function uid(prefix) {
@@ -223,6 +162,7 @@ export default function ReimbursementSystem() {
   const cloudReadyRef = useRef(false);
   const loadingFromCloudRef = useRef(false);
   const hasLoadedCloudRef = useRef(false);
+  const saveTimerRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -244,32 +184,34 @@ export default function ReimbursementSystem() {
 
       const unsubscribeAuth = onAuthStateChanged(auth, async user => {
         if (!user) return;
-        setCloudStatus('Conectado à nuvem');
-        cloudReadyRef.current = true;
 
-        onSnapshot(dbRef.current, snapshot => {
+        try {
+          setCloudStatus('Carregando dados da nuvem...');
+          cloudReadyRef.current = true;
+
+          const snapshot = await getDoc(dbRef.current);
           const cloudData = snapshot.data();
 
-          // Carrega os dados da nuvem apenas uma vez.
-          // Depois disso, evita que o Firebase sobrescreva alterações recém-feitas na tela.
-          if (cloudData?.payload && !hasLoadedCloudRef.current) {
+          if (cloudData?.payload) {
             loadingFromCloudRef.current = true;
-            hasLoadedCloudRef.current = true;
             setData(cloudData.payload);
             localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData.payload));
-            setTimeout(() => { loadingFromCloudRef.current = false; }, 0);
-          }
-
-          // Se ainda não existir documento na nuvem, cria com os dados atuais.
-          if (!cloudData?.payload && !hasLoadedCloudRef.current) {
+            setTimeout(() => {
+              loadingFromCloudRef.current = false;
+              hasLoadedCloudRef.current = true;
+              setCloudStatus('Conectado à nuvem');
+            }, 0);
+          } else {
+            await setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true });
             hasLoadedCloudRef.current = true;
-            setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true });
+            setCloudStatus('Conectado à nuvem');
           }
-        }, error => {
-          console.warn('Erro no Firestore', error);
-          setCloudStatus('Erro na nuvem, salvando local');
+        } catch (error) {
+          console.warn('Erro ao carregar dados da nuvem', error);
+          hasLoadedCloudRef.current = true;
           cloudReadyRef.current = false;
-        });
+          setCloudStatus('Erro na nuvem, salvando local');
+        }
       });
 
       signInAnonymously(auth).catch(error => {
@@ -287,13 +229,21 @@ export default function ReimbursementSystem() {
   }, []);
 
   useEffect(() => {
+    if (loadingFromCloudRef.current) return;
+
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
       console.warn('Erro ao salvar localStorage', e);
     }
 
-    if (isCloudConfigured() && cloudReadyRef.current && dbRef.current && hasLoadedCloudRef.current && !loadingFromCloudRef.current) {
+    if (!isCloudConfigured()) return;
+    if (!cloudReadyRef.current || !dbRef.current || !hasLoadedCloudRef.current) return;
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+
+    saveTimerRef.current = setTimeout(() => {
+      setCloudStatus('Salvando na nuvem...');
       setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true }).then(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         setCloudStatus('Conectado à nuvem · salvo');
@@ -301,7 +251,11 @@ export default function ReimbursementSystem() {
         console.warn('Erro ao salvar na nuvem', error);
         setCloudStatus('Falha ao salvar na nuvem, salvo localmente');
       });
-    }
+    }, 500);
+
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, [data]);
 
   function notify(msg) {
