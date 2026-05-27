@@ -11,7 +11,6 @@ import {
   Wallet,
   CheckCircle2,
   Clock3,
-  AlertTriangle,
   Cloud,
   CloudOff,
   FileText,
@@ -24,17 +23,10 @@ import {
   User,
   LayoutDashboard,
   KanbanSquare,
-  Save,
 } from 'lucide-react';
 
 const STORAGE_KEY = 'painel_reembolso_clientes_tarefas_v1';
 
-// Para ativar a nuvem de verdade:
-// 1. Crie um projeto no Firebase.
-// 2. Ative Authentication > Anonymous.
-// 3. Ative Firestore Database.
-// 4. Copie as configurações do seu app web e cole abaixo.
-// 5. Troque cloudEnabled para true.
 const firebaseConfig = {
   cloudEnabled: true,
   apiKey: 'AIzaSyA1PObWO9auhTYcyenG0BdKFA3ErjRgu6M',
@@ -58,71 +50,10 @@ function isCloudConfigured() {
 }
 
 const initialData = {
-  clients: [
-    {
-      id: 'cli-1',
-      name: 'Ana Athayde Mafra',
-      type: 'PF',
-      cpf: '000.000.000-00',
-      cnpj: '',
-      email: 'ana@email.com',
-      phone: '(11) 99999-0000',
-      notes: 'Cliente com solicitação de estorno de parcelas.',
-      createdAt: '2026-05-27',
-    },
-    {
-      id: 'cli-2',
-      name: 'Banco C6 S.A',
-      type: 'PJ',
-      cpf: '',
-      cnpj: '00.000.000/0001-00',
-      email: 'reembolso@cliente.com',
-      phone: '',
-      notes: 'Cliente PJ para despesas processuais.',
-      createdAt: '2026-05-27',
-    },
-  ],
+  clients: [],
   team: ['Thiago', 'Isabela', 'Marina', 'Rafaela', 'Joana'],
-  reimbursements: [
-    {
-      id: 'REB-001',
-      clientId: 'cli-1',
-      title: 'Reembolso de parcelas descontadas',
-      amount: 7480,
-      status: 'Pendente',
-      dueDate: '2026-06-16',
-      description: 'Abertura de tarefa no X-Gracco com valor devido por contrato.',
-      documents: ['formulario-reembolso.pdf', 'calculo-corrigido.xlsx'],
-      comments: [
-        { id: 'c1', author: 'Thiago', text: 'Solicitação revisada internamente.', date: '2026-05-27 09:30' },
-      ],
-      createdAt: '2026-05-27',
-    },
-  ],
-  activities: [
-    {
-      id: 'ATV-001',
-      title: 'Confirmar saldo remanescente com cliente',
-      clientId: 'cli-1',
-      assignee: 'Thiago',
-      status: 'A Fazer',
-      priority: 'Alta',
-      dueDate: '2026-05-30',
-      description: 'Aguardar orientação antes de abrir nova solicitação.',
-      createdAt: '2026-05-27',
-    },
-    {
-      id: 'ATV-002',
-      title: 'Anexar comprovantes e autorizações',
-      clientId: 'cli-2',
-      assignee: 'Isabela',
-      status: 'Em Andamento',
-      priority: 'Média',
-      dueDate: '2026-06-03',
-      description: 'Conferir nota de débito com comprovante e e-mail de autorização.',
-      createdAt: '2026-05-27',
-    },
-  ],
+  reimbursements: [],
+  activities: [],
 };
 
 function uid(prefix) {
@@ -214,14 +145,12 @@ export default function ReimbursementSystem() {
   const [data, setData] = useState(initialData);
   const [active, setActive] = useState('dashboard');
   const [query, setQuery] = useState('');
-  const [dateFilter, setDateFilter] = useState({ start: '', end: '', onlyOverdue: false });
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState('');
   const [cloudStatus, setCloudStatus] = useState(isCloudConfigured() ? 'Conectando à nuvem...' : 'Nuvem não configurada');
   const dbRef = useRef(null);
   const cloudReadyRef = useRef(false);
   const loadingFromCloudRef = useRef(false);
-  const hasLoadedCloudRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -246,16 +175,14 @@ export default function ReimbursementSystem() {
         setCloudStatus('Conectado à nuvem');
         cloudReadyRef.current = true;
 
-        onSnapshot(dbRef.current, snapshot => {
+        const unsubscribeData = onSnapshot(dbRef.current, snapshot => {
           const cloudData = snapshot.data();
           if (cloudData?.payload) {
             loadingFromCloudRef.current = true;
-            hasLoadedCloudRef.current = true;
             setData(cloudData.payload);
             localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData.payload));
             setTimeout(() => { loadingFromCloudRef.current = false; }, 0);
           } else {
-            hasLoadedCloudRef.current = true;
             setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true });
           }
         }, error => {
@@ -263,6 +190,8 @@ export default function ReimbursementSystem() {
           setCloudStatus('Erro na nuvem, salvando local');
           cloudReadyRef.current = false;
         });
+
+        return unsubscribeData;
       });
 
       signInAnonymously(auth).catch(error => {
@@ -286,10 +215,8 @@ export default function ReimbursementSystem() {
       console.warn('Erro ao salvar localStorage', e);
     }
 
-    if (isCloudConfigured() && cloudReadyRef.current && dbRef.current && hasLoadedCloudRef.current && !loadingFromCloudRef.current) {
-      setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true }).then(() => {
-        setCloudStatus('Conectado à nuvem · salvo');
-      }).catch(error => {
+    if (isCloudConfigured() && cloudReadyRef.current && dbRef.current && !loadingFromCloudRef.current) {
+      setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true }).catch(error => {
         console.warn('Erro ao salvar na nuvem', error);
         setCloudStatus('Falha ao salvar na nuvem, salvo localmente');
       });
@@ -303,17 +230,6 @@ export default function ReimbursementSystem() {
 
   const clientMap = useMemo(() => Object.fromEntries(data.clients.map(c => [c.id, c])), [data.clients]);
 
-  function isReimbursementOverdue(r) {
-    return Boolean(r.dueDate && r.dueDate < today() && r.status !== 'Pago');
-  }
-
-  function isInsideDateFilter(r) {
-    if (!r.dueDate) return !dateFilter.start && !dateFilter.end;
-    if (dateFilter.start && r.dueDate < dateFilter.start) return false;
-    if (dateFilter.end && r.dueDate > dateFilter.end) return false;
-    return true;
-  }
-
   const stats = useMemo(() => {
     const total = data.reimbursements.reduce((sum, r) => sum + Number(r.amount || 0), 0);
     return {
@@ -322,18 +238,11 @@ export default function ReimbursementSystem() {
       pending: data.reimbursements.filter(r => r.status === 'Pendente').length,
       approved: data.reimbursements.filter(r => r.status === 'Aprovado' || r.status === 'Pago').length,
       tasks: data.activities.filter(a => a.status !== 'Concluído').length,
-      overdue: data.reimbursements.filter(r => r.dueDate && r.dueDate < today() && r.status !== 'Pago').length,
-      overdueAmount: data.reimbursements.filter(r => r.dueDate && r.dueDate < today() && r.status !== 'Pago').reduce((sum, r) => sum + Number(r.amount || 0), 0),
     };
   }, [data]);
 
   const filteredClients = data.clients.filter(c => `${c.name} ${c.cpf} ${c.cnpj} ${c.email}`.toLowerCase().includes(query.toLowerCase()));
-  const filteredReimbursements = data.reimbursements.filter(r => {
-    const matchesSearch = `${r.id} ${r.title} ${clientMap[r.clientId]?.name || ''} ${r.status}`.toLowerCase().includes(query.toLowerCase());
-    const matchesDate = isInsideDateFilter(r);
-    const matchesOverdue = !dateFilter.onlyOverdue || isReimbursementOverdue(r);
-    return matchesSearch && matchesDate && matchesOverdue;
-  });
+  const filteredReimbursements = data.reimbursements.filter(r => `${r.id} ${r.title} ${clientMap[r.clientId]?.name || ''} ${r.status}`.toLowerCase().includes(query.toLowerCase()));
 
   function saveClient(form, editingId) {
     const client = {
@@ -503,32 +412,18 @@ export default function ReimbursementSystem() {
         </header>
 
         <div className="p-4 md:p-8">
-          <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             <Stat icon={Wallet} label="Valor em reembolso" value={currency(stats.total)} />
             <Stat icon={Users} label="Clientes" value={stats.clients} />
             <Stat icon={Clock3} label="Pendentes" value={stats.pending} />
             <Stat icon={CheckCircle2} label="Aprovados/Pagos" value={stats.approved} />
             <Stat icon={ClipboardList} label="Atividades abertas" value={stats.tasks} />
-            <Stat icon={AlertTriangle} label="Vencidos para cobrar" value={`${stats.overdue} · ${currency(stats.overdueAmount)}`} />
           </div>
 
           {active !== 'dashboard' && (
-            <div className="mb-5 space-y-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
-              <div className="flex items-center gap-3">
-                <Search className="ml-2 text-slate-400" size={20} />
-                <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar por cliente, CPF/CNPJ, status ou ID..." className="w-full bg-transparent px-2 py-2 text-sm outline-none" />
-              </div>
-              {active === 'reimbursements' && (
-                <div className="grid gap-3 border-t border-slate-100 pt-3 md:grid-cols-4">
-                  <Field label="Vencimento inicial"><input type="date" className={inputClass} value={dateFilter.start} onChange={e => setDateFilter({ ...dateFilter, start: e.target.value })} /></Field>
-                  <Field label="Vencimento final"><input type="date" className={inputClass} value={dateFilter.end} onChange={e => setDateFilter({ ...dateFilter, end: e.target.value })} /></Field>
-                  <label className="flex items-end gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
-                    <input type="checkbox" checked={dateFilter.onlyOverdue} onChange={e => setDateFilter({ ...dateFilter, onlyOverdue: e.target.checked })} />
-                    Mostrar só vencidos para cobrar
-                  </label>
-                  <button onClick={() => setDateFilter({ start: '', end: '', onlyOverdue: false })} className="self-end rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold hover:bg-slate-50">Limpar filtros</button>
-                </div>
-              )}
+            <div className="mb-5 flex items-center gap-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+              <Search className="ml-2 text-slate-400" size={20} />
+              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar por cliente, CPF/CNPJ, status ou ID..." className="w-full bg-transparent px-2 py-2 text-sm outline-none" />
             </div>
           )}
 
@@ -566,18 +461,8 @@ function Stat({ icon: Icon, label, value }) {
 function Dashboard({ data, clientMap, setActive }) {
   const recent = [...data.reimbursements].slice(-5).reverse();
   const openTasks = data.activities.filter(a => a.status !== 'Concluído').slice(0, 5);
-  const overdue = data.reimbursements.filter(r => r.dueDate && r.dueDate < today() && r.status !== 'Pago');
   return (
     <div className="grid gap-6 xl:grid-cols-2">
-      <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="font-bold">Reembolsos vencidos para cobrar</h3>
-          <button onClick={() => setActive('reimbursements')} className="text-sm font-semibold text-rose-600">Ver cobranças</button>
-        </div>
-        <div className="space-y-3">
-          {overdue.length ? overdue.map(r => <div key={r.id} className="flex items-center justify-between rounded-2xl border border-rose-100 bg-rose-50 p-4"><div><div className="font-semibold text-rose-900">{r.title}</div><div className="text-sm text-rose-700">{clientMap[r.clientId]?.name || 'Sem cliente'} · Venceu em {r.dueDate}</div></div><div className="text-right"><div className="font-bold text-rose-900">{currency(r.amount)}</div><Badge className="border-rose-200 bg-white text-rose-700">Cobrar</Badge></div></div>) : <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Nenhum reembolso vencido no momento.</p>}
-        </div>
-      </section>
       <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="font-bold">Reembolsos recentes</h3>
@@ -587,12 +472,12 @@ function Dashboard({ data, clientMap, setActive }) {
           {recent.map(r => <div key={r.id} className="flex items-center justify-between rounded-2xl border border-slate-100 p-4"><div><div className="font-semibold">{r.title}</div><div className="text-sm text-slate-500">{clientMap[r.clientId]?.name || 'Sem cliente'} · {r.id}</div></div><div className="text-right"><div className="font-bold">{currency(r.amount)}</div><Badge className={statusColors[r.status]}>{r.status}</Badge></div></div>)}
         </div>
       </section>
-      <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200 xl:col-span-2">
+      <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="font-bold">Atividades abertas</h3>
           <button onClick={() => setActive('activities')} className="text-sm font-semibold text-blue-600">Abrir quadro</button>
         </div>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="space-y-3">
           {openTasks.map(a => <div key={a.id} className="rounded-2xl border border-slate-100 p-4"><div className="mb-2 flex items-start justify-between gap-3"><div className="font-semibold">{a.title}</div><Badge className={statusColors[a.status]}>{a.status}</Badge></div><div className="text-sm text-slate-500">{clientMap[a.clientId]?.name || 'Sem cliente'} · Responsável: {a.assignee}</div></div>)}
         </div>
       </section>
@@ -605,7 +490,7 @@ function ClientsTable({ clients, onEdit, onDelete }) {
 }
 
 function ReimbursementsTable({ items, clientMap, onOpen, onEdit, onDelete }) {
-  return <div className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-200"><table className="w-full min-w-[950px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-4">Solicitação</th><th className="p-4">Cliente</th><th className="p-4">Valor</th><th className="p-4">Vencimento</th><th className="p-4">Status</th><th className="p-4 text-right">Ações</th></tr></thead><tbody className="divide-y divide-slate-100">{items.map(r => { const overdue = r.dueDate && r.dueDate < today() && r.status !== 'Pago'; return <tr key={r.id} className={overdue ? 'bg-rose-50 hover:bg-rose-100' : 'hover:bg-slate-50'}><td className="p-4"><div className="font-semibold">{r.title}</div><div className="text-xs text-slate-500">{r.id}</div></td><td className="p-4 text-slate-600">{clientMap[r.clientId]?.name || 'Sem cliente'}</td><td className="p-4 font-bold">{currency(r.amount)}</td><td className="p-4 text-slate-600"><div>{r.dueDate || '-'}</div>{overdue && <Badge className="mt-1 border-rose-200 bg-white text-rose-700">Vencido · cobrar</Badge>}</td><td className="p-4"><Badge className={statusColors[r.status]}>{r.status}</Badge></td><td className="p-4"><div className="flex justify-end gap-2"><button onClick={() => onOpen(r)} className="rounded-xl px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50">Detalhes</button><button onClick={() => onEdit(r)} className="rounded-xl p-2 text-slate-500 hover:bg-blue-50 hover:text-blue-600"><Pencil size={17}/></button><button onClick={() => onDelete(r.id)} className="rounded-xl p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={17}/></button></div></td></tr> })}</tbody></table></div>;
+  return <div className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-200"><table className="w-full min-w-[950px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-4">Solicitação</th><th className="p-4">Cliente</th><th className="p-4">Valor</th><th className="p-4">Vencimento</th><th className="p-4">Status</th><th className="p-4 text-right">Ações</th></tr></thead><tbody className="divide-y divide-slate-100">{items.map(r => <tr key={r.id} className="hover:bg-slate-50"><td className="p-4"><div className="font-semibold">{r.title}</div><div className="text-xs text-slate-500">{r.id}</div></td><td className="p-4 text-slate-600">{clientMap[r.clientId]?.name || 'Sem cliente'}</td><td className="p-4 font-bold">{currency(r.amount)}</td><td className="p-4 text-slate-600">{r.dueDate || '-'}</td><td className="p-4"><Badge className={statusColors[r.status]}>{r.status}</Badge></td><td className="p-4"><div className="flex justify-end gap-2"><button onClick={() => onOpen(r)} className="rounded-xl px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50">Detalhes</button><button onClick={() => onEdit(r)} className="rounded-xl p-2 text-slate-500 hover:bg-blue-50 hover:text-blue-600"><Pencil size={17}/></button><button onClick={() => onDelete(r.id)} className="rounded-xl p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={17}/></button></div></td></tr>)}</tbody></table></div>;
 }
 
 function Kanban({ activities, clientMap, onEdit, onDelete, setData }) {
