@@ -3,27 +3,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { doc, getFirestore, onSnapshot, setDoc } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Plus,
-  Search,
-  Users,
-  ClipboardList,
-  Wallet,
-  CheckCircle2,
-  Clock3,
-  Cloud,
-  CloudOff,
-  FileText,
-  MessageSquare,
-  Pencil,
-  Trash2,
-  X,
-  Upload,
-  Building2,
-  User,
-  LayoutDashboard,
-  KanbanSquare,
-} from 'lucide-react';
+import { Plus, Search, Users, ClipboardList, Wallet, CheckCircle2, Clock3, AlertTriangle, Cloud, CloudOff, FileText, MessageSquare, Pencil, Trash2, X, Upload, Building2, User, LayoutDashboard, KanbanSquare } from 'lucide-react';
 
 const STORAGE_KEY = 'painel_reembolso_clientes_tarefas_v1';
 
@@ -40,13 +20,7 @@ const firebaseConfig = {
 const CLOUD_DOC_ID = 'sistema-reembolso-principal';
 
 function isCloudConfigured() {
-  return Boolean(
-    firebaseConfig.cloudEnabled &&
-    firebaseConfig.apiKey &&
-    firebaseConfig.authDomain &&
-    firebaseConfig.projectId &&
-    firebaseConfig.appId
-  );
+  return Boolean(firebaseConfig.cloudEnabled && firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId && firebaseConfig.appId);
 }
 
 const initialData = {
@@ -74,29 +48,16 @@ function currency(value) {
 }
 
 function maskCpf(value = '') {
-  return value
-    .replace(/\D/g, '')
-    .slice(0, 11)
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  return value.replace(/\D/g, '').slice(0, 11).replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
 }
 
 function maskCnpj(value = '') {
-  return value
-    .replace(/\D/g, '')
-    .slice(0, 14)
-    .replace(/(\d{2})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d)/, '$1/$2')
-    .replace(/(\d{4})(\d{1,2})$/, '$1-$2');
+  return value.replace(/\D/g, '').slice(0, 14).replace(/(\d{2})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1/$2').replace(/(\d{4})(\d{1,2})$/, '$1-$2');
 }
 
 function maskPhone(value = '') {
   const v = value.replace(/\D/g, '').slice(0, 11);
-  if (v.length <= 10) {
-    return v.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d)/, '$1-$2');
-  }
+  if (v.length <= 10) return v.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d)/, '$1-$2');
   return v.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d)/, '$1-$2');
 }
 
@@ -109,6 +70,8 @@ const statusColors = {
   'Em Andamento': 'bg-indigo-100 text-indigo-800 border-indigo-200',
   Concluído: 'bg-emerald-100 text-emerald-800 border-emerald-200',
 };
+
+const inputClass = 'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100';
 
 function Badge({ children, className = '' }) {
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${className}`}>{children}</span>;
@@ -131,20 +94,14 @@ function Modal({ title, children, onClose }) {
 }
 
 function Field({ label, children }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-semibold text-slate-700">{label}</span>
-      {children}
-    </label>
-  );
+  return <label className="block"><span className="mb-1 block text-sm font-semibold text-slate-700">{label}</span>{children}</label>;
 }
-
-const inputClass = 'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100';
 
 export default function ReimbursementSystem() {
   const [data, setData] = useState(initialData);
   const [active, setActive] = useState('dashboard');
   const [query, setQuery] = useState('');
+  const [dateFilter, setDateFilter] = useState({ start: '', end: '', onlyOverdue: false });
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState('');
   const [cloudStatus, setCloudStatus] = useState(isCloudConfigured() ? 'Conectando à nuvem...' : 'Nuvem não configurada');
@@ -163,19 +120,18 @@ export default function ReimbursementSystem() {
 
   useEffect(() => {
     if (!isCloudConfigured()) return;
-
     try {
       const app = initializeApp(firebaseConfig);
       const auth = getAuth(app);
       const db = getFirestore(app);
       dbRef.current = doc(db, 'workspaces', CLOUD_DOC_ID);
 
-      const unsubscribeAuth = onAuthStateChanged(auth, async user => {
+      const unsubscribeAuth = onAuthStateChanged(auth, user => {
         if (!user) return;
         setCloudStatus('Conectado à nuvem');
         cloudReadyRef.current = true;
 
-        const unsubscribeData = onSnapshot(dbRef.current, snapshot => {
+        onSnapshot(dbRef.current, snapshot => {
           const cloudData = snapshot.data();
           if (cloudData?.payload) {
             loadingFromCloudRef.current = true;
@@ -190,8 +146,6 @@ export default function ReimbursementSystem() {
           setCloudStatus('Erro na nuvem, salvando local');
           cloudReadyRef.current = false;
         });
-
-        return unsubscribeData;
       });
 
       signInAnonymously(auth).catch(error => {
@@ -230,19 +184,38 @@ export default function ReimbursementSystem() {
 
   const clientMap = useMemo(() => Object.fromEntries(data.clients.map(c => [c.id, c])), [data.clients]);
 
+  function isReimbursementOverdue(r) {
+    return Boolean(r.dueDate && r.dueDate < today() && r.status !== 'Pago');
+  }
+
+  function isInsideDateFilter(r) {
+    if (!r.dueDate) return !dateFilter.start && !dateFilter.end;
+    if (dateFilter.start && r.dueDate < dateFilter.start) return false;
+    if (dateFilter.end && r.dueDate > dateFilter.end) return false;
+    return true;
+  }
+
   const stats = useMemo(() => {
     const total = data.reimbursements.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    const overdueItems = data.reimbursements.filter(r => r.dueDate && r.dueDate < today() && r.status !== 'Pago');
     return {
       total,
       clients: data.clients.length,
       pending: data.reimbursements.filter(r => r.status === 'Pendente').length,
       approved: data.reimbursements.filter(r => r.status === 'Aprovado' || r.status === 'Pago').length,
       tasks: data.activities.filter(a => a.status !== 'Concluído').length,
+      overdue: overdueItems.length,
+      overdueAmount: overdueItems.reduce((sum, r) => sum + Number(r.amount || 0), 0),
     };
   }, [data]);
 
   const filteredClients = data.clients.filter(c => `${c.name} ${c.cpf} ${c.cnpj} ${c.email}`.toLowerCase().includes(query.toLowerCase()));
-  const filteredReimbursements = data.reimbursements.filter(r => `${r.id} ${r.title} ${clientMap[r.clientId]?.name || ''} ${r.status}`.toLowerCase().includes(query.toLowerCase()));
+  const filteredReimbursements = data.reimbursements.filter(r => {
+    const matchesSearch = `${r.id} ${r.title} ${clientMap[r.clientId]?.name || ''} ${r.status}`.toLowerCase().includes(query.toLowerCase());
+    const matchesDate = isInsideDateFilter(r);
+    const matchesOverdue = !dateFilter.onlyOverdue || isReimbursementOverdue(r);
+    return matchesSearch && matchesDate && matchesOverdue;
+  });
 
   function saveClient(form, editingId) {
     const client = {
@@ -258,10 +231,7 @@ export default function ReimbursementSystem() {
     };
     if (!client.name) return notify('Informe o nome do cliente.');
     if (!client.cpf && !client.cnpj) return notify('Informe CPF ou CNPJ.');
-    setData(prev => ({
-      ...prev,
-      clients: editingId ? prev.clients.map(c => c.id === editingId ? client : c) : [...prev.clients, client],
-    }));
+    setData(prev => ({ ...prev, clients: editingId ? prev.clients.map(c => c.id === editingId ? client : c) : [...prev.clients, client] }));
     setModal(null);
     notify(editingId ? 'Cliente atualizado.' : 'Cliente cadastrado.');
   }
@@ -280,10 +250,7 @@ export default function ReimbursementSystem() {
       createdAt: form.createdAt || today(),
     };
     if (!item.clientId || !item.title) return notify('Informe cliente e título.');
-    setData(prev => ({
-      ...prev,
-      reimbursements: editingId ? prev.reimbursements.map(r => r.id === editingId ? item : r) : [...prev.reimbursements, item],
-    }));
+    setData(prev => ({ ...prev, reimbursements: editingId ? prev.reimbursements.map(r => r.id === editingId ? item : r) : [...prev.reimbursements, item] }));
     setModal(null);
     notify(editingId ? 'Reembolso atualizado.' : 'Reembolso cadastrado.');
   }
@@ -303,11 +270,7 @@ export default function ReimbursementSystem() {
     if (!task.title || !task.assignee) return notify('Informe título e responsável.');
     setData(prev => {
       const updatedTeam = prev.team.includes(task.assignee) ? prev.team : [...prev.team, task.assignee];
-      return {
-        ...prev,
-        team: updatedTeam,
-        activities: editingId ? prev.activities.map(a => a.id === editingId ? task : a) : [...prev.activities, task],
-      };
+      return { ...prev, team: updatedTeam, activities: editingId ? prev.activities.map(a => a.id === editingId ? task : a) : [...prev.activities, task] };
     });
     setModal(null);
     notify(editingId ? 'Atividade atualizada.' : 'Atividade criada.');
@@ -412,18 +375,32 @@ export default function ReimbursementSystem() {
         </header>
 
         <div className="p-4 md:p-8">
-          <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
             <Stat icon={Wallet} label="Valor em reembolso" value={currency(stats.total)} />
             <Stat icon={Users} label="Clientes" value={stats.clients} />
             <Stat icon={Clock3} label="Pendentes" value={stats.pending} />
             <Stat icon={CheckCircle2} label="Aprovados/Pagos" value={stats.approved} />
             <Stat icon={ClipboardList} label="Atividades abertas" value={stats.tasks} />
+            <Stat icon={AlertTriangle} label="Vencidos para cobrar" value={`${stats.overdue} · ${currency(stats.overdueAmount)}`} />
           </div>
 
           {active !== 'dashboard' && (
-            <div className="mb-5 flex items-center gap-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
-              <Search className="ml-2 text-slate-400" size={20} />
-              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar por cliente, CPF/CNPJ, status ou ID..." className="w-full bg-transparent px-2 py-2 text-sm outline-none" />
+            <div className="mb-5 space-y-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+              <div className="flex items-center gap-3">
+                <Search className="ml-2 text-slate-400" size={20} />
+                <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar por cliente, CPF/CNPJ, status ou ID..." className="w-full bg-transparent px-2 py-2 text-sm outline-none" />
+              </div>
+              {active === 'reimbursements' && (
+                <div className="grid gap-3 border-t border-slate-100 pt-3 md:grid-cols-4">
+                  <Field label="Vencimento inicial"><input type="date" className={inputClass} value={dateFilter.start} onChange={e => setDateFilter({ ...dateFilter, start: e.target.value })} /></Field>
+                  <Field label="Vencimento final"><input type="date" className={inputClass} value={dateFilter.end} onChange={e => setDateFilter({ ...dateFilter, end: e.target.value })} /></Field>
+                  <label className="flex items-end gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
+                    <input type="checkbox" checked={dateFilter.onlyOverdue} onChange={e => setDateFilter({ ...dateFilter, onlyOverdue: e.target.checked })} />
+                    Mostrar só vencidos para cobrar
+                  </label>
+                  <button onClick={() => setDateFilter({ start: '', end: '', onlyOverdue: false })} className="self-end rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold hover:bg-slate-50">Limpar filtros</button>
+                </div>
+              )}
             </div>
           )}
 
@@ -461,24 +438,67 @@ function Stat({ icon: Icon, label, value }) {
 function Dashboard({ data, clientMap, setActive }) {
   const recent = [...data.reimbursements].slice(-5).reverse();
   const openTasks = data.activities.filter(a => a.status !== 'Concluído').slice(0, 5);
+  const overdue = data.reimbursements.filter(r => r.dueDate && r.dueDate < today() && r.status !== 'Pago');
+
   return (
     <div className="grid gap-6 xl:grid-cols-2">
+      <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="font-bold">Reembolsos vencidos para cobrar</h3>
+          <button onClick={() => setActive('reimbursements')} className="text-sm font-semibold text-rose-600">Ver cobranças</button>
+        </div>
+        <div className="space-y-3">
+          {overdue.length ? overdue.map(r => (
+            <div key={r.id} className="flex items-center justify-between rounded-2xl border border-rose-100 bg-rose-50 p-4">
+              <div>
+                <div className="font-semibold text-rose-900">{r.title}</div>
+                <div className="text-sm text-rose-700">{clientMap[r.clientId]?.name || 'Sem cliente'} · Venceu em {r.dueDate}</div>
+              </div>
+              <div className="text-right">
+                <div className="font-bold text-rose-900">{currency(r.amount)}</div>
+                <Badge className="border-rose-200 bg-white text-rose-700">Cobrar</Badge>
+              </div>
+            </div>
+          )) : <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Nenhum reembolso vencido no momento.</p>}
+        </div>
+      </section>
+
       <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="font-bold">Reembolsos recentes</h3>
           <button onClick={() => setActive('reimbursements')} className="text-sm font-semibold text-blue-600">Ver todos</button>
         </div>
         <div className="space-y-3">
-          {recent.map(r => <div key={r.id} className="flex items-center justify-between rounded-2xl border border-slate-100 p-4"><div><div className="font-semibold">{r.title}</div><div className="text-sm text-slate-500">{clientMap[r.clientId]?.name || 'Sem cliente'} · {r.id}</div></div><div className="text-right"><div className="font-bold">{currency(r.amount)}</div><Badge className={statusColors[r.status]}>{r.status}</Badge></div></div>)}
+          {recent.map(r => (
+            <div key={r.id} className="flex items-center justify-between rounded-2xl border border-slate-100 p-4">
+              <div>
+                <div className="font-semibold">{r.title}</div>
+                <div className="text-sm text-slate-500">{clientMap[r.clientId]?.name || 'Sem cliente'} · {r.id}</div>
+              </div>
+              <div className="text-right">
+                <div className="font-bold">{currency(r.amount)}</div>
+                <Badge className={statusColors[r.status]}>{r.status}</Badge>
+              </div>
+            </div>
+          ))}
         </div>
       </section>
-      <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+
+      <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200 xl:col-span-2">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="font-bold">Atividades abertas</h3>
           <button onClick={() => setActive('activities')} className="text-sm font-semibold text-blue-600">Abrir quadro</button>
         </div>
-        <div className="space-y-3">
-          {openTasks.map(a => <div key={a.id} className="rounded-2xl border border-slate-100 p-4"><div className="mb-2 flex items-start justify-between gap-3"><div className="font-semibold">{a.title}</div><Badge className={statusColors[a.status]}>{a.status}</Badge></div><div className="text-sm text-slate-500">{clientMap[a.clientId]?.name || 'Sem cliente'} · Responsável: {a.assignee}</div></div>)}
+        <div className="grid gap-3 md:grid-cols-2">
+          {openTasks.map(a => (
+            <div key={a.id} className="rounded-2xl border border-slate-100 p-4">
+              <div className="mb-2 flex items-start justify-between gap-3">
+                <div className="font-semibold">{a.title}</div>
+                <Badge className={statusColors[a.status]}>{a.status}</Badge>
+              </div>
+              <div className="text-sm text-slate-500">{clientMap[a.clientId]?.name || 'Sem cliente'} · Responsável: {a.assignee}</div>
+            </div>
+          ))}
         </div>
       </section>
     </div>
@@ -490,7 +510,7 @@ function ClientsTable({ clients, onEdit, onDelete }) {
 }
 
 function ReimbursementsTable({ items, clientMap, onOpen, onEdit, onDelete }) {
-  return <div className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-200"><table className="w-full min-w-[950px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-4">Solicitação</th><th className="p-4">Cliente</th><th className="p-4">Valor</th><th className="p-4">Vencimento</th><th className="p-4">Status</th><th className="p-4 text-right">Ações</th></tr></thead><tbody className="divide-y divide-slate-100">{items.map(r => <tr key={r.id} className="hover:bg-slate-50"><td className="p-4"><div className="font-semibold">{r.title}</div><div className="text-xs text-slate-500">{r.id}</div></td><td className="p-4 text-slate-600">{clientMap[r.clientId]?.name || 'Sem cliente'}</td><td className="p-4 font-bold">{currency(r.amount)}</td><td className="p-4 text-slate-600">{r.dueDate || '-'}</td><td className="p-4"><Badge className={statusColors[r.status]}>{r.status}</Badge></td><td className="p-4"><div className="flex justify-end gap-2"><button onClick={() => onOpen(r)} className="rounded-xl px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50">Detalhes</button><button onClick={() => onEdit(r)} className="rounded-xl p-2 text-slate-500 hover:bg-blue-50 hover:text-blue-600"><Pencil size={17}/></button><button onClick={() => onDelete(r.id)} className="rounded-xl p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={17}/></button></div></td></tr>)}</tbody></table></div>;
+  return <div className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-200"><table className="w-full min-w-[950px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-4">Solicitação</th><th className="p-4">Cliente</th><th className="p-4">Valor</th><th className="p-4">Vencimento</th><th className="p-4">Status</th><th className="p-4 text-right">Ações</th></tr></thead><tbody className="divide-y divide-slate-100">{items.map(r => { const overdue = r.dueDate && r.dueDate < today() && r.status !== 'Pago'; return <tr key={r.id} className={overdue ? 'bg-rose-50 hover:bg-rose-100' : 'hover:bg-slate-50'}><td className="p-4"><div className="font-semibold">{r.title}</div><div className="text-xs text-slate-500">{r.id}</div></td><td className="p-4 text-slate-600">{clientMap[r.clientId]?.name || 'Sem cliente'}</td><td className="p-4 font-bold">{currency(r.amount)}</td><td className="p-4 text-slate-600"><div>{r.dueDate || '-'}</div>{overdue && <Badge className="mt-1 border-rose-200 bg-white text-rose-700">Vencido · cobrar</Badge>}</td><td className="p-4"><Badge className={statusColors[r.status]}>{r.status}</Badge></td><td className="p-4"><div className="flex justify-end gap-2"><button onClick={() => onOpen(r)} className="rounded-xl px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50">Detalhes</button><button onClick={() => onEdit(r)} className="rounded-xl p-2 text-slate-500 hover:bg-blue-50 hover:text-blue-600"><Pencil size={17}/></button><button onClick={() => onDelete(r.id)} className="rounded-xl p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={17}/></button></div></td></tr> })}</tbody></table></div>;
 }
 
 function Kanban({ activities, clientMap, onEdit, onDelete, setData }) {
