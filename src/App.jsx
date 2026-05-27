@@ -11,6 +11,7 @@ import {
   Wallet,
   CheckCircle2,
   Clock3,
+  AlertTriangle,
   Cloud,
   CloudOff,
   FileText,
@@ -23,10 +24,17 @@ import {
   User,
   LayoutDashboard,
   KanbanSquare,
+  Save,
 } from 'lucide-react';
 
 const STORAGE_KEY = 'painel_reembolso_clientes_tarefas_v1';
 
+// Para ativar a nuvem de verdade:
+// 1. Crie um projeto no Firebase.
+// 2. Ative Authentication > Anonymous.
+// 3. Ative Firestore Database.
+// 4. Copie as configurações do seu app web e cole abaixo.
+// 5. Troque cloudEnabled para true.
 const firebaseConfig = {
   cloudEnabled: true,
   apiKey: 'AIzaSyA1PObWO9auhTYcyenG0BdKFA3ErjRgu6M',
@@ -50,10 +58,71 @@ function isCloudConfigured() {
 }
 
 const initialData = {
-  clients: [],
+  clients: [
+    {
+      id: 'cli-1',
+      name: 'Ana Athayde Mafra',
+      type: 'PF',
+      cpf: '000.000.000-00',
+      cnpj: '',
+      email: 'ana@email.com',
+      phone: '(11) 99999-0000',
+      notes: 'Cliente com solicitação de estorno de parcelas.',
+      createdAt: '2026-05-27',
+    },
+    {
+      id: 'cli-2',
+      name: 'Banco C6 S.A',
+      type: 'PJ',
+      cpf: '',
+      cnpj: '00.000.000/0001-00',
+      email: 'reembolso@cliente.com',
+      phone: '',
+      notes: 'Cliente PJ para despesas processuais.',
+      createdAt: '2026-05-27',
+    },
+  ],
   team: ['Thiago', 'Isabela', 'Marina', 'Rafaela', 'Joana'],
-  reimbursements: [],
-  activities: [],
+  reimbursements: [
+    {
+      id: 'REB-001',
+      clientId: 'cli-1',
+      title: 'Reembolso de parcelas descontadas',
+      amount: 7480,
+      status: 'Pendente',
+      dueDate: '2026-06-16',
+      description: 'Abertura de tarefa no X-Gracco com valor devido por contrato.',
+      documents: ['formulario-reembolso.pdf', 'calculo-corrigido.xlsx'],
+      comments: [
+        { id: 'c1', author: 'Thiago', text: 'Solicitação revisada internamente.', date: '2026-05-27 09:30' },
+      ],
+      createdAt: '2026-05-27',
+    },
+  ],
+  activities: [
+    {
+      id: 'ATV-001',
+      title: 'Confirmar saldo remanescente com cliente',
+      clientId: 'cli-1',
+      assignee: 'Thiago',
+      status: 'A Fazer',
+      priority: 'Alta',
+      dueDate: '2026-05-30',
+      description: 'Aguardar orientação antes de abrir nova solicitação.',
+      createdAt: '2026-05-27',
+    },
+    {
+      id: 'ATV-002',
+      title: 'Anexar comprovantes e autorizações',
+      clientId: 'cli-2',
+      assignee: 'Isabela',
+      status: 'Em Andamento',
+      priority: 'Média',
+      dueDate: '2026-06-03',
+      description: 'Conferir nota de débito com comprovante e e-mail de autorização.',
+      createdAt: '2026-05-27',
+    },
+  ],
 };
 
 function uid(prefix) {
@@ -145,12 +214,15 @@ export default function ReimbursementSystem() {
   const [data, setData] = useState(initialData);
   const [active, setActive] = useState('dashboard');
   const [query, setQuery] = useState('');
+  const [dateFilter, setDateFilter] = useState({ start: '', end: '', onlyOverdue: false });
+  const [activityFilter, setActivityFilter] = useState({ status: 'Todos', priority: 'Todas', assignee: 'Todos', onlyLate: false });
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState('');
   const [cloudStatus, setCloudStatus] = useState(isCloudConfigured() ? 'Conectando à nuvem...' : 'Nuvem não configurada');
   const dbRef = useRef(null);
   const cloudReadyRef = useRef(false);
   const loadingFromCloudRef = useRef(false);
+  const hasLoadedCloudRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -175,14 +247,16 @@ export default function ReimbursementSystem() {
         setCloudStatus('Conectado à nuvem');
         cloudReadyRef.current = true;
 
-        const unsubscribeData = onSnapshot(dbRef.current, snapshot => {
+        onSnapshot(dbRef.current, snapshot => {
           const cloudData = snapshot.data();
           if (cloudData?.payload) {
             loadingFromCloudRef.current = true;
+            hasLoadedCloudRef.current = true;
             setData(cloudData.payload);
             localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData.payload));
             setTimeout(() => { loadingFromCloudRef.current = false; }, 0);
           } else {
+            hasLoadedCloudRef.current = true;
             setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true });
           }
         }, error => {
@@ -190,8 +264,6 @@ export default function ReimbursementSystem() {
           setCloudStatus('Erro na nuvem, salvando local');
           cloudReadyRef.current = false;
         });
-
-        return unsubscribeData;
       });
 
       signInAnonymously(auth).catch(error => {
@@ -215,8 +287,10 @@ export default function ReimbursementSystem() {
       console.warn('Erro ao salvar localStorage', e);
     }
 
-    if (isCloudConfigured() && cloudReadyRef.current && dbRef.current && !loadingFromCloudRef.current) {
-      setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true }).catch(error => {
+    if (isCloudConfigured() && cloudReadyRef.current && dbRef.current && hasLoadedCloudRef.current && !loadingFromCloudRef.current) {
+      setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true }).then(() => {
+        setCloudStatus('Conectado à nuvem · salvo');
+      }).catch(error => {
         console.warn('Erro ao salvar na nuvem', error);
         setCloudStatus('Falha ao salvar na nuvem, salvo localmente');
       });
@@ -230,6 +304,17 @@ export default function ReimbursementSystem() {
 
   const clientMap = useMemo(() => Object.fromEntries(data.clients.map(c => [c.id, c])), [data.clients]);
 
+  function isReimbursementOverdue(r) {
+    return Boolean(r.dueDate && r.dueDate < today() && r.status !== 'Pago');
+  }
+
+  function isInsideDateFilter(r) {
+    if (!r.dueDate) return !dateFilter.start && !dateFilter.end;
+    if (dateFilter.start && r.dueDate < dateFilter.start) return false;
+    if (dateFilter.end && r.dueDate > dateFilter.end) return false;
+    return true;
+  }
+
   const stats = useMemo(() => {
     const total = data.reimbursements.reduce((sum, r) => sum + Number(r.amount || 0), 0);
     return {
@@ -238,11 +323,27 @@ export default function ReimbursementSystem() {
       pending: data.reimbursements.filter(r => r.status === 'Pendente').length,
       approved: data.reimbursements.filter(r => r.status === 'Aprovado' || r.status === 'Pago').length,
       tasks: data.activities.filter(a => a.status !== 'Concluído').length,
+      overdue: data.reimbursements.filter(r => r.dueDate && r.dueDate < today() && r.status !== 'Pago').length,
+      overdueAmount: data.reimbursements.filter(r => r.dueDate && r.dueDate < today() && r.status !== 'Pago').reduce((sum, r) => sum + Number(r.amount || 0), 0),
     };
   }, [data]);
 
   const filteredClients = data.clients.filter(c => `${c.name} ${c.cpf} ${c.cnpj} ${c.email}`.toLowerCase().includes(query.toLowerCase()));
-  const filteredReimbursements = data.reimbursements.filter(r => `${r.id} ${r.title} ${clientMap[r.clientId]?.name || ''} ${r.status}`.toLowerCase().includes(query.toLowerCase()));
+  const filteredReimbursements = data.reimbursements.filter(r => {
+    const matchesSearch = `${r.id} ${r.title} ${clientMap[r.clientId]?.name || ''} ${r.status}`.toLowerCase().includes(query.toLowerCase());
+    const matchesDate = isInsideDateFilter(r);
+    const matchesOverdue = !dateFilter.onlyOverdue || isReimbursementOverdue(r);
+    return matchesSearch && matchesDate && matchesOverdue;
+  });
+
+  const filteredActivities = data.activities.filter(a => {
+    const matchesSearch = `${a.id} ${a.title} ${a.assignee} ${a.status} ${a.priority} ${clientMap[a.clientId]?.name || ''}`.toLowerCase().includes(query.toLowerCase());
+    const matchesStatus = activityFilter.status === 'Todos' || a.status === activityFilter.status;
+    const matchesPriority = activityFilter.priority === 'Todas' || a.priority === activityFilter.priority;
+    const matchesAssignee = activityFilter.assignee === 'Todos' || a.assignee === activityFilter.assignee;
+    const matchesLate = !activityFilter.onlyLate || (a.dueDate && a.dueDate < today() && a.status !== 'Concluído');
+    return matchesSearch && matchesStatus && matchesPriority && matchesAssignee && matchesLate;
+  });
 
   function saveClient(form, editingId) {
     const client = {
@@ -412,25 +513,51 @@ export default function ReimbursementSystem() {
         </header>
 
         <div className="p-4 md:p-8">
-          <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
             <Stat icon={Wallet} label="Valor em reembolso" value={currency(stats.total)} />
             <Stat icon={Users} label="Clientes" value={stats.clients} />
             <Stat icon={Clock3} label="Pendentes" value={stats.pending} />
             <Stat icon={CheckCircle2} label="Aprovados/Pagos" value={stats.approved} />
             <Stat icon={ClipboardList} label="Atividades abertas" value={stats.tasks} />
+            <Stat icon={AlertTriangle} label="Vencidos para cobrar" value={`${stats.overdue} · ${currency(stats.overdueAmount)}`} />
           </div>
 
           {active !== 'dashboard' && (
-            <div className="mb-5 flex items-center gap-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
-              <Search className="ml-2 text-slate-400" size={20} />
-              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar por cliente, CPF/CNPJ, status ou ID..." className="w-full bg-transparent px-2 py-2 text-sm outline-none" />
+            <div className="mb-5 space-y-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+              <div className="flex items-center gap-3">
+                <Search className="ml-2 text-slate-400" size={20} />
+                <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar por cliente, CPF/CNPJ, status ou ID..." className="w-full bg-transparent px-2 py-2 text-sm outline-none" />
+              </div>
+              {active === 'reimbursements' && (
+                <div className="grid gap-3 border-t border-slate-100 pt-3 md:grid-cols-4">
+                  <Field label="Vencimento inicial"><input type="date" className={inputClass} value={dateFilter.start} onChange={e => setDateFilter({ ...dateFilter, start: e.target.value })} /></Field>
+                  <Field label="Vencimento final"><input type="date" className={inputClass} value={dateFilter.end} onChange={e => setDateFilter({ ...dateFilter, end: e.target.value })} /></Field>
+                  <label className="flex items-end gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
+                    <input type="checkbox" checked={dateFilter.onlyOverdue} onChange={e => setDateFilter({ ...dateFilter, onlyOverdue: e.target.checked })} />
+                    Mostrar só vencidos para cobrar
+                  </label>
+                  <button onClick={() => setDateFilter({ start: '', end: '', onlyOverdue: false })} className="self-end rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold hover:bg-slate-50">Limpar filtros</button>
+                </div>
+              )}
+              {active === 'activities' && (
+                <div className="grid gap-3 border-t border-slate-100 pt-3 md:grid-cols-5">
+                  <Field label="Status"><select className={inputClass} value={activityFilter.status} onChange={e => setActivityFilter({ ...activityFilter, status: e.target.value })}><option>Todos</option><option>A Fazer</option><option>Em Andamento</option><option>Concluído</option></select></Field>
+                  <Field label="Prioridade"><select className={inputClass} value={activityFilter.priority} onChange={e => setActivityFilter({ ...activityFilter, priority: e.target.value })}><option>Todas</option><option>Baixa</option><option>Média</option><option>Alta</option></select></Field>
+                  <Field label="Responsável"><select className={inputClass} value={activityFilter.assignee} onChange={e => setActivityFilter({ ...activityFilter, assignee: e.target.value })}><option>Todos</option>{data.team.map(t => <option key={t}>{t}</option>)}</select></Field>
+                  <label className="flex items-end gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
+                    <input type="checkbox" checked={activityFilter.onlyLate} onChange={e => setActivityFilter({ ...activityFilter, onlyLate: e.target.checked })} />
+                    Mostrar só atrasadas
+                  </label>
+                  <button onClick={() => setActivityFilter({ status: 'Todos', priority: 'Todas', assignee: 'Todos', onlyLate: false })} className="self-end rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold hover:bg-slate-50">Limpar filtros</button>
+                </div>
+              )}
             </div>
           )}
 
           {active === 'dashboard' && <Dashboard data={data} clientMap={clientMap} setActive={setActive} />}
           {active === 'clients' && <ClientsTable clients={filteredClients} onEdit={c => setModal({ type: 'client', item: c })} onDelete={deleteClient} />}
           {active === 'reimbursements' && <ReimbursementsTable items={filteredReimbursements} clientMap={clientMap} onOpen={r => setModal({ type: 'reimbursementDetails', item: r })} onEdit={r => setModal({ type: 'reimbursement', item: r })} onDelete={deleteReimbursement} />}
-          {active === 'activities' && <Kanban activities={data.activities} clientMap={clientMap} onEdit={a => setModal({ type: 'activity', item: a })} onDelete={deleteActivity} setData={setData} />}
+          {active === 'activities' && <ActivityWorkspace activities={filteredActivities} allActivities={data.activities} clientMap={clientMap} onEdit={a => setModal({ type: 'activity', item: a })} onDelete={deleteActivity} setData={setData} />}
         </div>
       </main>
 
@@ -461,8 +588,18 @@ function Stat({ icon: Icon, label, value }) {
 function Dashboard({ data, clientMap, setActive }) {
   const recent = [...data.reimbursements].slice(-5).reverse();
   const openTasks = data.activities.filter(a => a.status !== 'Concluído').slice(0, 5);
+  const overdue = data.reimbursements.filter(r => r.dueDate && r.dueDate < today() && r.status !== 'Pago');
   return (
     <div className="grid gap-6 xl:grid-cols-2">
+      <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="font-bold">Reembolsos vencidos para cobrar</h3>
+          <button onClick={() => setActive('reimbursements')} className="text-sm font-semibold text-rose-600">Ver cobranças</button>
+        </div>
+        <div className="space-y-3">
+          {overdue.length ? overdue.map(r => <div key={r.id} className="flex items-center justify-between rounded-2xl border border-rose-100 bg-rose-50 p-4"><div><div className="font-semibold text-rose-900">{r.title}</div><div className="text-sm text-rose-700">{clientMap[r.clientId]?.name || 'Sem cliente'} · Venceu em {r.dueDate}</div></div><div className="text-right"><div className="font-bold text-rose-900">{currency(r.amount)}</div><Badge className="border-rose-200 bg-white text-rose-700">Cobrar</Badge></div></div>) : <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Nenhum reembolso vencido no momento.</p>}
+        </div>
+      </section>
       <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="font-bold">Reembolsos recentes</h3>
@@ -472,12 +609,12 @@ function Dashboard({ data, clientMap, setActive }) {
           {recent.map(r => <div key={r.id} className="flex items-center justify-between rounded-2xl border border-slate-100 p-4"><div><div className="font-semibold">{r.title}</div><div className="text-sm text-slate-500">{clientMap[r.clientId]?.name || 'Sem cliente'} · {r.id}</div></div><div className="text-right"><div className="font-bold">{currency(r.amount)}</div><Badge className={statusColors[r.status]}>{r.status}</Badge></div></div>)}
         </div>
       </section>
-      <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+      <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200 xl:col-span-2">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="font-bold">Atividades abertas</h3>
           <button onClick={() => setActive('activities')} className="text-sm font-semibold text-blue-600">Abrir quadro</button>
         </div>
-        <div className="space-y-3">
+        <div className="grid gap-3 md:grid-cols-2">
           {openTasks.map(a => <div key={a.id} className="rounded-2xl border border-slate-100 p-4"><div className="mb-2 flex items-start justify-between gap-3"><div className="font-semibold">{a.title}</div><Badge className={statusColors[a.status]}>{a.status}</Badge></div><div className="text-sm text-slate-500">{clientMap[a.clientId]?.name || 'Sem cliente'} · Responsável: {a.assignee}</div></div>)}
         </div>
       </section>
@@ -490,7 +627,72 @@ function ClientsTable({ clients, onEdit, onDelete }) {
 }
 
 function ReimbursementsTable({ items, clientMap, onOpen, onEdit, onDelete }) {
-  return <div className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-200"><table className="w-full min-w-[950px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-4">Solicitação</th><th className="p-4">Cliente</th><th className="p-4">Valor</th><th className="p-4">Vencimento</th><th className="p-4">Status</th><th className="p-4 text-right">Ações</th></tr></thead><tbody className="divide-y divide-slate-100">{items.map(r => <tr key={r.id} className="hover:bg-slate-50"><td className="p-4"><div className="font-semibold">{r.title}</div><div className="text-xs text-slate-500">{r.id}</div></td><td className="p-4 text-slate-600">{clientMap[r.clientId]?.name || 'Sem cliente'}</td><td className="p-4 font-bold">{currency(r.amount)}</td><td className="p-4 text-slate-600">{r.dueDate || '-'}</td><td className="p-4"><Badge className={statusColors[r.status]}>{r.status}</Badge></td><td className="p-4"><div className="flex justify-end gap-2"><button onClick={() => onOpen(r)} className="rounded-xl px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50">Detalhes</button><button onClick={() => onEdit(r)} className="rounded-xl p-2 text-slate-500 hover:bg-blue-50 hover:text-blue-600"><Pencil size={17}/></button><button onClick={() => onDelete(r.id)} className="rounded-xl p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={17}/></button></div></td></tr>)}</tbody></table></div>;
+  return <div className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-200"><table className="w-full min-w-[950px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-4">Solicitação</th><th className="p-4">Cliente</th><th className="p-4">Valor</th><th className="p-4">Vencimento</th><th className="p-4">Status</th><th className="p-4 text-right">Ações</th></tr></thead><tbody className="divide-y divide-slate-100">{items.map(r => { const overdue = r.dueDate && r.dueDate < today() && r.status !== 'Pago'; return <tr key={r.id} className={overdue ? 'bg-rose-50 hover:bg-rose-100' : 'hover:bg-slate-50'}><td className="p-4"><div className="font-semibold">{r.title}</div><div className="text-xs text-slate-500">{r.id}</div></td><td className="p-4 text-slate-600">{clientMap[r.clientId]?.name || 'Sem cliente'}</td><td className="p-4 font-bold">{currency(r.amount)}</td><td className="p-4 text-slate-600"><div>{r.dueDate || '-'}</div>{overdue && <Badge className="mt-1 border-rose-200 bg-white text-rose-700">Vencido · cobrar</Badge>}</td><td className="p-4"><Badge className={statusColors[r.status]}>{r.status}</Badge></td><td className="p-4"><div className="flex justify-end gap-2"><button onClick={() => onOpen(r)} className="rounded-xl px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50">Detalhes</button><button onClick={() => onEdit(r)} className="rounded-xl p-2 text-slate-500 hover:bg-blue-50 hover:text-blue-600"><Pencil size={17}/></button><button onClick={() => onDelete(r.id)} className="rounded-xl p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={17}/></button></div></td></tr> })}</tbody></table></div>;
+}
+
+function ActivityWorkspace({ activities, allActivities, clientMap, onEdit, onDelete, setData }) {
+  const total = allActivities.length;
+  const done = allActivities.filter(a => a.status === 'Concluído').length;
+  const doing = allActivities.filter(a => a.status === 'Em Andamento').length;
+  const todo = allActivities.filter(a => a.status === 'A Fazer').length;
+  const late = allActivities.filter(a => a.dueDate && a.dueDate < today() && a.status !== 'Concluído').length;
+  const high = allActivities.filter(a => a.priority === 'Alta' && a.status !== 'Concluído').length;
+  const progress = total ? Math.round((done / total) * 100) : 0;
+  const byAssignee = Object.entries(allActivities.reduce((acc, a) => {
+    acc[a.assignee || 'Sem responsável'] = (acc[a.assignee || 'Sem responsável'] || 0) + 1;
+    return acc;
+  }, {})).sort((a, b) => b[1] - a[1]);
+
+  return (
+    <div className="space-y-6">
+      <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-6 text-white shadow-xl">
+        <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+          <div>
+            <p className="text-sm font-semibold text-blue-200">Central de atividades</p>
+            <h3 className="mt-1 text-3xl font-bold">Acompanhe a divisão da equipe e os prazos críticos</h3>
+            <p className="mt-2 max-w-2xl text-sm text-blue-100">Use esta área para controlar quem está fazendo cada tarefa, o que está atrasado e o que já foi concluído.</p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <MiniStat label="Total" value={total} />
+              <MiniStat label="Em andamento" value={doing} />
+              <MiniStat label="Atrasadas" value={late} danger />
+              <MiniStat label="Alta prioridade" value={high} danger />
+            </div>
+          </div>
+          <div className="rounded-3xl bg-white/10 p-5 ring-1 ring-white/20">
+            <div className="mb-3 flex items-center justify-between text-sm font-semibold text-blue-100"><span>Progresso geral</span><span>{progress}%</span></div>
+            <div className="h-4 overflow-hidden rounded-full bg-white/20"><div className="h-full rounded-full bg-white" style={{ width: `${progress}%` }} /></div>
+            <div className="mt-5 grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="rounded-2xl bg-white/10 p-3"><div className="text-xl font-bold">{todo}</div><div>A fazer</div></div>
+              <div className="rounded-2xl bg-white/10 p-3"><div className="text-xl font-bold">{doing}</div><div>Andamento</div></div>
+              <div className="rounded-2xl bg-white/10 p-3"><div className="text-xl font-bold">{done}</div><div>Concluído</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[1fr_360px]">
+        <Kanban activities={activities} clientMap={clientMap} onEdit={onEdit} onDelete={onDelete} setData={setData} />
+        <aside className="space-y-5">
+          <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h3 className="mb-4 font-bold">Distribuição por responsável</h3>
+            <div className="space-y-3">
+              {byAssignee.length ? byAssignee.map(([name, count]) => <div key={name}><div className="mb-1 flex justify-between text-sm"><span className="font-semibold text-slate-700">{name}</span><span className="text-slate-500">{count}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${total ? (count / total) * 100 : 0}%` }} /></div></div>) : <p className="text-sm text-slate-500">Nenhuma atividade cadastrada.</p>}
+            </div>
+          </div>
+          <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h3 className="mb-4 font-bold">Próximos prazos</h3>
+            <div className="space-y-3">
+              {[...allActivities].filter(a => a.status !== 'Concluído' && a.dueDate).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 5).map(a => <div key={a.id} className={`rounded-2xl border p-3 ${a.dueDate < today() ? 'border-rose-200 bg-rose-50' : 'border-slate-100 bg-slate-50'}`}><div className="font-semibold text-slate-800">{a.title}</div><div className="text-xs text-slate-500">{a.assignee} · Prazo: {a.dueDate}</div></div>)}
+            </div>
+          </div>
+        </aside>
+      </section>
+    </div>
+  );
+}
+
+function MiniStat({ label, value, danger }) {
+  return <div className={`rounded-3xl p-4 ring-1 ${danger ? 'bg-rose-500/20 ring-rose-300/30' : 'bg-white/10 ring-white/20'}`}><div className="text-2xl font-bold">{value}</div><div className="text-xs font-semibold text-blue-100">{label}</div></div>;
 }
 
 function Kanban({ activities, clientMap, onEdit, onDelete, setData }) {
@@ -498,7 +700,7 @@ function Kanban({ activities, clientMap, onEdit, onDelete, setData }) {
   function move(id, status) {
     setData(prev => ({ ...prev, activities: prev.activities.map(a => a.id === id ? { ...a, status } : a) }));
   }
-  return <div className="grid gap-5 xl:grid-cols-3">{columns.map(col => <section key={col} className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><div className="mb-4 flex items-center justify-between"><h3 className="font-bold">{col}</h3><Badge className={statusColors[col]}>{activities.filter(a => a.status === col).length}</Badge></div><div className="space-y-3">{activities.filter(a => a.status === col).map(a => <div key={a.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4"><div className="mb-2 flex items-start justify-between gap-2"><h4 className="font-semibold">{a.title}</h4><button onClick={() => onDelete(a.id)} className="text-slate-400 hover:text-rose-600"><Trash2 size={16}/></button></div><div className="mb-3 text-sm text-slate-600">{a.description}</div><div className="mb-3 flex flex-wrap gap-2"><Badge className="border-blue-100 bg-blue-50 text-blue-700">{clientMap[a.clientId]?.name || 'Sem cliente'}</Badge><Badge className="border-slate-200 bg-white text-slate-700">{a.assignee}</Badge><Badge className={a.priority === 'Alta' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-700'}>{a.priority}</Badge></div><div className="flex items-center justify-between gap-2"><select value={a.status} onChange={e => move(a.id, e.target.value)} className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs"><option>A Fazer</option><option>Em Andamento</option><option>Concluído</option></select><button onClick={() => onEdit(a)} className="rounded-xl p-2 text-slate-500 hover:bg-white hover:text-blue-600"><Pencil size={16}/></button></div></div>)}</div></section>)}</div>;
+  return <div className="grid gap-5 xl:grid-cols-3">{columns.map(col => <section key={col} className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><div className="mb-4 flex items-center justify-between"><h3 className="font-bold">{col}</h3><Badge className={statusColors[col]}>{activities.filter(a => a.status === col).length}</Badge></div><div className="space-y-3">{activities.filter(a => a.status === col).map(a => { const late = a.dueDate && a.dueDate < today() && a.status !== 'Concluído'; return <div key={a.id} className={`rounded-3xl border p-4 ${late ? 'border-rose-200 bg-rose-50' : 'border-slate-100 bg-slate-50'}`}><div className="mb-2 flex items-start justify-between gap-2"><h4 className="font-semibold">{a.title}</h4><button onClick={() => onDelete(a.id)} className="text-slate-400 hover:text-rose-600"><Trash2 size={16}/></button></div><div className="mb-3 text-sm text-slate-600">{a.description}</div><div className="mb-3 flex flex-wrap gap-2"><Badge className="border-blue-100 bg-blue-50 text-blue-700">{clientMap[a.clientId]?.name || 'Sem cliente'}</Badge><Badge className="border-slate-200 bg-white text-slate-700">{a.assignee}</Badge><Badge className={a.priority === 'Alta' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-700'}>{a.priority}</Badge>{late && <Badge className="border-rose-200 bg-white text-rose-700">Atrasada</Badge>}</div><div className="mb-3 text-xs text-slate-500">Prazo: {a.dueDate || 'Sem prazo'}</div><div className="flex items-center justify-between gap-2"><select value={a.status} onChange={e => move(a.id, e.target.value)} className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs"><option>A Fazer</option><option>Em Andamento</option><option>Concluído</option></select><button onClick={() => onEdit(a)} className="rounded-xl p-2 text-slate-500 hover:bg-white hover:text-blue-600"><Pencil size={16}/></button></div></div> })}</div></section>)}</div>;
 }
 
 function ClientModal({ item, onClose, onSave }) {
