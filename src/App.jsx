@@ -57,6 +57,13 @@ function isCloudConfigured() {
   );
 }
 
+function withTimeout(promise, ms = 10000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Tempo limite ao salvar na nuvem')), ms)),
+  ]);
+}
+
 const initialData = {
   clients: [],
   team: ['Thiago', 'Isabela', 'Marina', 'Rafaela', 'Joana'],
@@ -202,7 +209,7 @@ export default function ReimbursementSystem() {
               setCloudStatus('Conectado à nuvem');
             }, 0);
           } else {
-            await setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true });
+            await withTimeout(setDoc(dbRef.current, { payload: data, updatedAt: new Date().toISOString() }, { merge: true }));
             hasLoadedCloudRef.current = true;
             setCloudStatus('Conectado à nuvem');
           }
@@ -242,11 +249,11 @@ export default function ReimbursementSystem() {
 
     try {
       setCloudStatus('Salvando na nuvem...');
-      await setDoc(dbRef.current, { payload: nextData, updatedAt: new Date().toISOString() }, { merge: true });
+      await withTimeout(setDoc(dbRef.current, { payload: nextData, updatedAt: new Date().toISOString() }, { merge: true }));
       setCloudStatus('Conectado à nuvem · salvo');
     } catch (error) {
       console.warn('Erro ao salvar na nuvem', error);
-      setCloudStatus('Falha ao salvar na nuvem, salvo localmente');
+      setCloudStatus('Falha ao salvar na nuvem, salvo localmente. Verifique Firebase/Regras/Internet.');
     }
   }
 
